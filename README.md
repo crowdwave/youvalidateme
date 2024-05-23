@@ -10,7 +10,7 @@ Why? To centralise field validation logic for your applications instead of scatt
 
 Features:
 
-- **HTTP server**: YouValidateMe is a special purpose HTTP server focused on storing JSON Schema documents and validating JSON data against them. 
+- **HTTP server**: YouValidateMe is a special purpose HTTP server focused on heling you create a library of JSON Schema validation documents for your applications, and validating JSON data against them. 
 - **Your JSON schema library**: You can upload your JSON Schema documents to the server. 
 - **Validates JSON Data**: You can validate JSON data against schemas in your library.
 - **Retrieve Validation Statistics**: Retrieve statistics on inbound paths and JSON schema validation passes/fails.
