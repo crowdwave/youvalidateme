@@ -39,7 +39,7 @@ Start the server with default options:
 Start the server with custom options:
 
 ```sh
-./youvalidateme --port 9090 --schemas-dir=/path/to/schemas --allow-uploads
+./youvalidateme --port 8080 --schemas-dir=/path/to/schemas --allow-uploads
 ```
 
 ### Command-line Options
