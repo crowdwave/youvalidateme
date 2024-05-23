@@ -10,7 +10,6 @@ import (
     "net/http"
     "os"
     "path/filepath"
-    "runtime"
     "sync"
 
     "github.com/fsnotify/fsnotify"
@@ -319,9 +318,6 @@ func checkSchemasDirWritable() error {
 
 func main() {
     pflag.Parse()
-
-    // Ensure the program can use all available CPU cores
-    runtime.GOMAXPROCS(runtime.NumCPU())
 
     // Check if the 'help' flag is present and its value is true
     helpFlag := pflag.Lookup("help")
