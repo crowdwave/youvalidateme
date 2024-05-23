@@ -11,6 +11,7 @@ import (
     "os"
     "path/filepath"
     "sync"
+    "time"
 
     "github.com/fsnotify/fsnotify"
     "github.com/gorilla/mux"
@@ -25,6 +26,7 @@ var (
     port           int
     schemasDir     string
     allowUploads   bool
+    verbose        bool
     cache          = make(map[string]*gojsonschema.Schema)
     cacheMutex     sync.RWMutex
     stats          = make(map[string]*PathStats)
@@ -42,6 +44,7 @@ func init() {
     pflag.IntVar(&port, "port", 8080, "Port to bind the server (default: 8080)")
     pflag.StringVar(&schemasDir, "schemas-dir", "./schemas", "Directory to load JSON schemas from (default: ./schemas)")
     pflag.BoolVar(&allowUploads, "allow-uploads", false, "Allow schema uploads (default: false)")
+    pflag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (default: false)")
     pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
     pflag.Usage = printHelp
 }
@@ -114,7 +117,14 @@ func watchSchemas() error {
     }
 }
 
+func logRequest(r *http.Request, outcome string) {
+    if verbose {
+        log.Printf("[%s] %s %s - %s", time.Now().Format(time.RFC3339), r.Method, r.URL.Path, outcome)
+    }
+}
+
 func validateHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
     vars := mux.Vars(r)
     schemaFile := vars["schema"] + ".json"
 
@@ -123,26 +133,30 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
     cacheMutex.RUnlock()
 
     if !found {
-        http.Error(w, "Schema not found", http.StatusNotFound)
+        http.Error(w, `{"error":"Schema not found"}`, http.StatusNotFound)
+        logRequest(r, "Schema not found")
         return
     }
 
     body, err := ioutil.ReadAll(r.Body)
     if err != nil {
-        http.Error(w, "Invalid request body", http.StatusBadRequest)
+        http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)
+        logRequest(r, "Invalid request body")
         return
     }
 
     var jsonData interface{}
     if err := json.Unmarshal(body, &jsonData); err != nil {
-        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        http.Error(w, `{"error":"Invalid JSON"}`, http.StatusBadRequest)
+        logRequest(r, "Invalid JSON")
         return
     }
 
     documentLoader := gojsonschema.NewGoLoader(jsonData)
     result, err := schema.Validate(documentLoader)
     if err != nil {
-        http.Error(w, "Error during validation", http.StatusInternalServerError)
+        http.Error(w, `{"error":"Error during validation"}`, http.StatusInternalServerError)
+        logRequest(r, "Error during validation")
         return
     }
 
@@ -150,10 +164,16 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
 
     if result.Valid() {
         w.WriteHeader(http.StatusOK)
-        w.Write([]byte("Validation passed"))
+        json.NewEncoder(w).Encode(map[string]string{"result": "Validation passed"})
+        logRequest(r, "Validation passed")
     } else {
         w.WriteHeader(http.StatusBadRequest)
-        w.Write([]byte("Validation failed: " + fmt.Sprintf("%v", result.Errors())))
+        errors := []string{}
+        for _, err := range result.Errors() {
+            errors = append(errors, err.String())
+        }
+        json.NewEncoder(w).Encode(map[string]interface{}{"result": "Validation failed", "errors": errors})
+        logRequest(r, "Validation failed")
     }
 }
 
@@ -174,20 +194,23 @@ func updateStats(path string, passed bool) {
 }
 
 func statsHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
     statsMutex.Lock()
     defer statsMutex.Unlock()
 
     jsonStats, err := json.Marshal(stats)
     if err != nil {
-        http.Error(w, "Error generating stats", http.StatusInternalServerError)
+        http.Error(w, `{"error":"Error generating stats"}`, http.StatusInternalServerError)
+        logRequest(r, "Error generating stats")
         return
     }
 
-    w.Header().Set("Content-Type", "application/json")
     w.Write(jsonStats)
+    logRequest(r, "Stats retrieved")
 }
 
 func schemaHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
     vars := mux.Vars(r)
     schemaFile := vars["schema"] + ".json"
 
@@ -196,48 +219,56 @@ func schemaHandler(w http.ResponseWriter, r *http.Request) {
     cacheMutex.RUnlock()
 
     if !found {
-        http.Error(w, "Schema not found", http.StatusNotFound)
+        http.Error(w, `{"error":"Schema not found"}`, http.StatusNotFound)
+        logRequest(r, "Schema not found")
         return
     }
 
     schemaPath := filepath.Join(schemasDir, schemaFile)
     schemaContent, err := ioutil.ReadFile(schemaPath)
     if err != nil {
-        http.Error(w, "Failed to read schema file", http.StatusInternalServerError)
+        http.Error(w, `{"error":"Failed to read schema file"}`, http.StatusInternalServerError)
+        logRequest(r, "Failed to read schema file")
         return
     }
 
-    w.Header().Set("Content-Type", "application/json")
     w.Write(schemaContent)
+    logRequest(r, "Schema retrieved")
 }
 
 func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
     if !allowUploads {
-        http.Error(w, "Schema uploads are disabled", http.StatusForbidden)
+        http.Error(w, `{"error":"Schema uploads are disabled"}`, http.StatusForbidden)
+        logRequest(r, "Schema uploads are disabled")
         return
     }
 
     if r.ContentLength > maxUploadSize {
-        http.Error(w, "Uploaded schema is too large", http.StatusRequestEntityTooLarge)
+        http.Error(w, `{"error":"Uploaded schema is too large"}`, http.StatusRequestEntityTooLarge)
+        logRequest(r, "Uploaded schema is too large")
         return
     }
 
     body, err := ioutil.ReadAll(r.Body)
     if err != nil {
-        http.Error(w, "Invalid request body", http.StatusBadRequest)
+        http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)
+        logRequest(r, "Invalid request body")
         return
     }
 
     var schemaData interface{}
     if err := json.Unmarshal(body, &schemaData); err != nil {
-        http.Error(w, "Invalid JSON schema", http.StatusBadRequest)
+        http.Error(w, `{"error":"Invalid JSON schema"}`, http.StatusBadRequest)
+        logRequest(r, "Invalid JSON schema")
         return
     }
 
     vars := mux.Vars(r)
     schemaFile := vars["schema"] + ".json"
     if filepath.Ext(schemaFile) != ".json" {
-        http.Error(w, "File extension must be .json", http.StatusBadRequest)
+        http.Error(w, `{"error":"File extension must be .json"}`, http.StatusBadRequest)
+        logRequest(r, "File extension must be .json")
         return
     }
     schemaPath := filepath.Join(schemasDir, schemaFile)
@@ -245,7 +276,8 @@ func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
     // Save the schema to disk
     err = ioutil.WriteFile(schemaPath, body, 0644)
     if err != nil {
-        http.Error(w, "Failed to save schema", http.StatusInternalServerError)
+        http.Error(w, `{"error":"Failed to save schema"}`, http.StatusInternalServerError)
+        logRequest(r, "Failed to save schema")
         return
     }
 
@@ -255,18 +287,21 @@ func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
     cacheMutex.Unlock()
 
     if err != nil {
-        http.Error(w, "Failed to load schema into cache", http.StatusInternalServerError)
+        http.Error(w, `{"error":"Failed to load schema into cache"}`, http.StatusInternalServerError)
+        logRequest(r, "Failed to load schema into cache")
         return
     }
 
     w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Schema uploaded and validated successfully"))
+    json.NewEncoder(w).Encode(map[string]string{"result": "Schema uploaded and validated successfully"})
+    logRequest(r, "Schema uploaded and validated successfully")
 }
 
 func listSchemasHandler(w http.ResponseWriter, r *http.Request) {
     files, err := ioutil.ReadDir(schemasDir)
     if err != nil {
-        http.Error(w, "Failed to read schemas directory", http.StatusInternalServerError)
+        http.Error(w, `{"error":"Failed to read schemas directory"}`, http.StatusInternalServerError)
+        logRequest(r, "Failed to read schemas directory")
         return
     }
 
@@ -281,11 +316,13 @@ func listSchemasHandler(w http.ResponseWriter, r *http.Request) {
     if format == "json" {
         jsonResponse, err := json.Marshal(schemaFiles)
         if err != nil {
-            http.Error(w, "Failed to generate JSON response", http.StatusInternalServerError)
+            http.Error(w, `{"error":"Failed to generate JSON response"}`, http.StatusInternalServerError)
+            logRequest(r, "Failed to generate JSON response")
             return
         }
         w.Header().Set("Content-Type", "application/json")
         w.Write(jsonResponse)
+        logRequest(r, "Schema list retrieved (JSON format)")
     } else {
         w.Header().Set("Content-Type", "text/html")
         tmpl := template.Must(template.New("schemas").Parse(`
@@ -304,6 +341,7 @@ func listSchemasHandler(w http.ResponseWriter, r *http.Request) {
             </body>
             </html>`))
         tmpl.Execute(w, schemaFiles)
+        logRequest(r, "Schema list retrieved (HTML format)")
     }
 }
 
@@ -335,6 +373,7 @@ func main() {
     }
     log.Printf("Schemas Directory: %s", absSchemasDir)
     log.Printf("Allow Uploads: %t", allowUploads)
+    log.Printf("Verbose Logging: %t", verbose)
 
     // Check if the schemas directory exists
     if _, err := os.Stat(schemasDir); os.IsNotExist(err) {
@@ -381,6 +420,7 @@ func printHelp() {
     fmt.Println("By default, schema uploads are disabled. You can enable schema uploads using the --allow-uploads flag.")
     fmt.Println("Uploads are limited to 100K in size to prevent excessively large schemas from being uploaded.")
     fmt.Println("For the validate and get schema operations, the schema file must have a .json extension and be located in the specified schemas directory.")
+    fmt.Println("Verbose logging can be enabled using the --verbose flag to log all inbound requests with date, method, path, and outcome.")
 
     fmt.Fprintf(flag.CommandLine.Output(), "\nUsage of %s:\n", filepath.Base(os.Args[0]))
     fmt.Println("Command-line options:")
