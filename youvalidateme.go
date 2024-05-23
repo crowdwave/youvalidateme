@@ -39,6 +39,135 @@ type PathStats struct {
     Fails    int
 }
 
+// Meta-schema for JSON Schema Draft-07
+var jsonSchemaDraft07 = `{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": ["object", "boolean"],
+    "definitions": {
+        "schemaArray": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#"}
+        },
+        "nonNegativeInteger": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "nonNegativeIntegerDefault0": {
+            "allOf": [
+                {"$ref": "#/definitions/nonNegativeInteger"},
+                {"default": 0}
+            ]
+        },
+        "simpleTypes": {
+            "enum": ["array", "boolean", "integer", "null", "number", "object", "string"]
+        },
+        "stringArray": {
+            "type": "array",
+            "items": {"type": "string"},
+            "uniqueItems": true,
+            "default": []
+        }
+    },
+    "properties": {
+        "$id": {"type": "string", "format": "uri-reference"},
+        "$schema": {"type": "string", "format": "uri"},
+        "$ref": {"type": "string", "format": "uri-reference"},
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "default": true,
+        "examples": {
+            "type": "array",
+            "items": true
+        },
+        "multipleOf": {
+            "type": "number",
+            "exclusiveMinimum": 0
+        },
+        "maximum": {"type": "number"},
+        "exclusiveMaximum": {"type": "number"},
+        "minimum": {"type": "number"},
+        "exclusiveMinimum": {"type": "number"},
+        "maxLength": {"$ref": "#/definitions/nonNegativeInteger"},
+        "minLength": {"$ref": "#/definitions/nonNegativeIntegerDefault0"},
+        "pattern": {"type": "string", "format": "regex"},
+        "additionalItems": {"$ref": "#"},
+        "items": {
+            "anyOf": [
+                {"$ref": "#"},
+                {"$ref": "#/definitions/schemaArray"}
+            ],
+            "default": true
+        },
+        "maxItems": {"$ref": "#/definitions/nonNegativeInteger"},
+        "minItems": {"$ref": "#/definitions/nonNegativeIntegerDefault0"},
+        "uniqueItems": {
+            "type": "boolean",
+            "default": false
+        },
+        "contains": {"$ref": "#"},
+        "maxProperties": {"$ref": "#/definitions/nonNegativeInteger"},
+        "minProperties": {"$ref": "#/definitions/nonNegativeIntegerDefault0"},
+        "required": {"$ref": "#/definitions/stringArray"},
+        "additionalProperties": {"$ref": "#"},
+        "definitions": {
+            "type": "object",
+            "additionalProperties": {"$ref": "#"},
+            "default": {}
+        },
+        "properties": {
+            "type": "object",
+            "additionalProperties": {"$ref": "#"},
+            "default": {}
+        },
+        "patternProperties": {
+            "type": "object",
+            "additionalProperties": {"$ref": "#"},
+            "default": {}
+        },
+        "dependencies": {
+            "type": "object",
+            "additionalProperties": {
+                "anyOf": [
+                    {"$ref": "#"},
+                    {"$ref": "#/definitions/stringArray"}
+                ]
+            }
+        },
+        "propertyNames": {"$ref": "#"},
+        "const": true,
+        "enum": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true
+        },
+        "type": {
+            "anyOf": [
+                {"$ref": "#/definitions/simpleTypes"},
+                {
+                    "type": "array",
+                    "items": {"$ref": "#/definitions/simpleTypes"},
+                    "minItems": 1,
+                    "uniqueItems": true
+                }
+            ]
+        },
+        "format": {"type": "string"},
+        "contentMediaType": {"type": "string"},
+        "contentEncoding": {"type": "string"},
+        "if": {"$ref": "#"},
+        "then": {"$ref": "#"},
+        "else": {"$ref": "#"},
+        "allOf": {"$ref": "#/definitions/schemaArray"},
+        "anyOf": {"$ref": "#/definitions/schemaArray"},
+        "oneOf": {"$ref": "#/definitions/schemaArray"},
+        "not": {"$ref": "#"}
+    },
+    "default": true
+}`
+
+var draft07Loader = gojsonschema.NewStringLoader(jsonSchemaDraft07)
+
 func init() {
     pflag.StringVar(&hostname, "hostname", "localhost", "Hostname to bind the server (default: localhost)")
     pflag.IntVar(&port, "port", 8080, "Port to bind the server (default: 8080)")
@@ -53,11 +182,26 @@ func loadSchema(path string) (*gojsonschema.Schema, error) {
     if filepath.Ext(path) != ".json" {
         return nil, fmt.Errorf("file extension must be .json: %s", path)
     }
+
     schemaLoader := gojsonschema.NewReferenceLoader(fmt.Sprintf("file://%s", path))
     schema, err := gojsonschema.NewSchema(schemaLoader)
     if err != nil {
         return nil, fmt.Errorf("failed to load schema from %s: %v", path, err)
     }
+
+    // Validate the schema against the Draft-07 meta-schema
+    result, err := schema.Validate(draft07Loader)
+    if err != nil {
+        return nil, fmt.Errorf("error during schema validation: %v", err)
+    }
+    if !result.Valid() {
+        errors := []string{}
+        for _, err := range result.Errors() {
+            errors = append(errors, err.String())
+        }
+        return nil, fmt.Errorf("invalid schema: %s", errors)
+    }
+
     return schema, nil
 }
 
@@ -273,6 +417,25 @@ func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
     }
     schemaPath := filepath.Join(schemasDir, schemaFile)
 
+    // Validate the schema against the Draft-07 meta-schema
+    schemaLoader := gojsonschema.NewBytesLoader(body)
+    result, err := gojsonschema.Validate(draft07Loader, schemaLoader)
+    if err != nil {
+        http.Error(w, `{"error":"Error during schema validation"}`, http.StatusInternalServerError)
+        logRequest(r, "Error during schema validation")
+        return
+    }
+    if !result.Valid() {
+        errors := []string{}
+        for _, err := range result.Errors() {
+            errors = append(errors, err.String())
+        }
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"result": "Validation failed", "errors": errors})
+        logRequest(r, "Validation failed")
+        return
+    }
+
     // Save the schema to disk
     err = ioutil.WriteFile(schemaPath, body, 0644)
     if err != nil {
@@ -418,7 +581,7 @@ func printHelp() {
     fmt.Println("4. Uploading a new schema (if allowed).")
     fmt.Println("5. Listing all schemas in the directory.")
     fmt.Println("By default, schema uploads are disabled. You can enable schema uploads using the --allow-uploads flag.")
-    fmt.Println("Uploads are limited to 100K in size to prevent excessively large schemas from being uploaded.")
+    fmt.Println("Uploads are limited to 2MB in size to prevent excessively large schemas from being uploaded.")
     fmt.Println("For the validate and get schema operations, the schema file must have a .json extension and be located in the specified schemas directory.")
     fmt.Println("Verbose logging can be enabled using the --verbose flag to log all inbound requests with date, method, path, and outcome.")
 
