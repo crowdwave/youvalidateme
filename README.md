@@ -4,6 +4,14 @@ YouValidateMe is an HTTP server that validates inbound JSON data against JSON sc
 
 Why? To centralise field validation logic for your applications instead of scattering different validation logic everywhere that might get out of sync.
 
+## IMPORTANT!!!
+
+YouValidateMe is brand new and it not battle tested (or tested at all!). You should read the Go source code before using it and you should test it to your satisfaction before relying on it. There is no guarantee at all - use at your own risk.
+
+## How to use it in your applications.
+
+There is a Python file in the examples directory that illustrates how you would use YouValidateMe from within your own application.  If you are using a different language then look at the Pyuthon code anyway - it is simple to understand and you can easily transfer the principles to your preferred programming language or ask ChatGPT to convert it.
+
 ## Features
 
 - **Validate JSON Data**: Validate inbound JSON data against specified schemas.
