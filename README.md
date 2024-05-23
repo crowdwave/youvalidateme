@@ -4,7 +4,7 @@
   <img src="YOUVALIDATEMELOGO.png" alt="Logo">
 </p>
 
-YouValidateMe is an HTTP server that validates JSON data against JSON schemas. It's written in Golang.
+YouValidateMe is a single purpose HTTP server that validates JSON data against JSON schemas. It's written in Golang.
 
 Put your JSON Schema documents on the server and then submit JSON data to validate against those JSON Schemas.
 
