@@ -48,7 +48,11 @@ func init() {
 
 func loadSchema(path string) (*gojsonschema.Schema, error) {
     schemaLoader := gojsonschema.NewReferenceLoader(fmt.Sprintf("file://%s", path))
-    return gojsonschema.NewSchema(schemaLoader)
+    schema, err := gojsonschema.NewSchema(schemaLoader)
+    if err != nil {
+        return nil, fmt.Errorf("failed to load schema from %s: %v", path, err)
+    }
+    return schema, nil
 }
 
 func loadSchemas() {
@@ -72,16 +76,16 @@ func loadSchemas() {
     }
 }
 
-func watchSchemas() {
+func watchSchemas() error {
     watcher, err := fsnotify.NewWatcher()
     if err != nil {
-        log.Fatal(err)
+        return fmt.Errorf("failed to create watcher: %v", err)
     }
     defer watcher.Close()
 
     err = watcher.Add(schemasDir)
     if err != nil {
-        log.Fatal(err)
+        return fmt.Errorf("failed to add directory to watcher: %v", err)
     }
 
     for {
@@ -185,7 +189,7 @@ func schemaHandler(w http.ResponseWriter, r *http.Request) {
     schemaFile := vars["schema"] + ".json"
 
     cacheMutex.RLock()
-    schema, found := cache[schemaFile]
+    _, found := cache[schemaFile]
     cacheMutex.RUnlock()
 
     if !found {
@@ -315,9 +319,27 @@ func checkSchemasDirWritable() error {
 func main() {
     pflag.Parse()
 
-    if pflag.Lookup("help").Value.String() == "true" {
+    // Check if the 'help' flag is present and its value is true
+    helpFlag := pflag.Lookup("help")
+    if helpFlag != nil && helpFlag.Value.String() == "true" {
         pflag.Usage()
         return
+    }
+
+    // Log all option values and report the full path of directories
+    log.Printf("Server starting with the following options:")
+    log.Printf("Hostname: %s", hostname)
+    log.Printf("Port: %d", port)
+    absSchemasDir, err := filepath.Abs(schemasDir)
+    if err != nil {
+        log.Fatalf("Failed to get absolute path of schemas directory: %v", err)
+    }
+    log.Printf("Schemas Directory: %s", absSchemasDir)
+    log.Printf("Allow Uploads: %t", allowUploads)
+
+    // Check if the schemas directory exists
+    if _, err := os.Stat(schemasDir); os.IsNotExist(err) {
+        log.Fatalf("Schemas directory does not exist: %v", schemasDir)
     }
 
     if allowUploads {
@@ -330,7 +352,11 @@ func main() {
     loadSchemas()
 
     // Start watching for schema changes
-    go watchSchemas()
+    go func() {
+        if err := watchSchemas(); err != nil {
+            log.Fatalf("Error watching schemas: %v", err)
+        }
+    }()
 
     r := mux.NewRouter()
     r.HandleFunc("/validate/{schema}", validateHandler).Methods("POST")
@@ -363,10 +389,10 @@ func printHelp() {
     fmt.Println(`
 Examples:
   Start the server with default options:
-    go run main.go
+    go run youvalidateme.go
 
   Start the server with a custom port and schemas directory:
-    go run main.go --port 9090 --schemas-dir=/path/to/schemas
+    go run youvalidateme.go --port 9090 --schemas-dir=/path/to/schemas
 
 Endpoints:
   POST /validate/{schema} - Validate JSON data against the specified schema.
