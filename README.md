@@ -4,13 +4,34 @@
   <img src="YOUVALIDATEMELOGO.png" alt="Logo">
 </p>
 
-YouValidateMe is a single purpose HTTP server that validates JSON data against JSON schemas. It's written in Golang.
-
-Put your JSON Schema documents on the server and then submit JSON data to validate against those JSON Schemas.
+YouValidateMe is a library server for storing and validating against your JSON Schema documents. 
 
 Why? To centralise field validation logic for your applications instead of scattering different validation logic everywhere that might get out of sync.
 
-It's a single binary - nothing to install or configure though we do provide a systemd unit file to run it as a service.
+Features:
+
+- **HTTP server**: YouValidateMe is a special purpose HTTP server focus on JSON Schema validation. 
+- **Your JSON schema library**: You can upload your JSON Schema documents to the server. 
+- **Validates JSON Data**: You can validate JSON data against schemas in your library.
+- **Retrieve Validation Statistics**: Retrieve statistics on inbound paths and JSON schema validation passes/fails.
+- **Schema Management**: You can get/view JSON schemas in your library. 
+- **List Schemas**: You can list all the JSON schemas in your library.
+- **Zero config, single binary**: It's a single binary - nothing to install or configure, just run it.
+- **Example systemd unit provided**: It's a single binary - nothing to install or configure, just run it.
+- **Multiple specs supported** draft4, draft6, draft7, draft2019, draft2020
+- **Open Source**: It's written in Golang open source and licensed under the MIT License.
+
+YouValidateMe is based on https://github.com/santhosh-tekuri/jsonschema which is a JSON Schema validator for Go - the output from this library is used to provide the validation results.
+
+Ways to use YouValidateMe:
+
+1: JSON schema documents are stored as plain text JSON files on the server.
+2: You can manually copy your JSON schema documents to the server using normal operating system copy commands.
+3: You can upload your JSON schema documents to the server via POST using the provided API.
+4: You can validate by POSTing JSON data to the filename of one of your schema documents.
+5: You can pull schema documents into your code via GET and then validate JSON data using your own language/library.
+6: You can validate by submitting both data and schema to the server in a single POST.
+7: You can choose which JSON schema draft level to validate against by specifying 'spec' query parameter in the POST request.
 
 ## IMPORTANT!!!
 

@@ -17,228 +17,63 @@ import (
 
     "github.com/fsnotify/fsnotify"
     "github.com/gorilla/mux"
+    "github.com/santhosh-tekuri/jsonschema/v5"
     "github.com/spf13/pflag"
-    "github.com/xeipuuv/gojsonschema"
 )
 
 const (
-    maxUploadSize = 2 * 1024 * 1024 // 2MB
-    version       = "4"
+    version = "5"
 )
 
 var (
-    hostname       string
-    port           int
-    schemasDir     string
-    allowUploads   bool
-    verbose        bool
-    cache          = make(map[string]*gojsonschema.Schema)
-    cacheMutex     sync.RWMutex
-    stats          = make(map[string]*PathStats)
-    statsMutex     sync.Mutex
-    showVersion    bool
+    hostname           string
+    port               int
+    schemasDir         string
+    allowSaveUploads       bool
+    verbose            bool
+    defaultSpec        string
+    maxUploadSizeMB    int
+    maxUploadSize      int64
+    defaultOutputLevel string
+    cache              = make(map[string]*jsonschema.Schema)
+    cacheMutex         sync.RWMutex
+    stats              = make(map[string]*PathStats)
+    statsMutex         sync.Mutex
+    showVersion        bool
+    validSpecs         = map[string]*jsonschema.Draft{
+        "draft4":    jsonschema.Draft4,
+        "draft6":    jsonschema.Draft6,
+        "draft7":    jsonschema.Draft7,
+        "draft2019": jsonschema.Draft2019,
+        "draft2020": jsonschema.Draft2020,
+    }
+    validOutputLevels = map[string]string{
+        "basic":    "basic",
+        "flag":     "flag",
+        "detailed": "detailed",
+        "verbose":  "verbose",
+    }
 )
 
+// PathStats holds the request statistics for a specific path
 type PathStats struct {
     Requests int
     Passes   int
     Fails    int
 }
 
-// Meta-schema for JSON Schema Draft-07
-var jsonSchemaDraft202012 = `
-{
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "$id": "http://json-schema.org/draft-07/schema#",
-    "title": "Core schema meta-schema",
-    "definitions": {
-        "schemaArray": {
-            "type": "array",
-            "minItems": 1,
-            "items": { "$ref": "#" }
-        },
-        "nonNegativeInteger": {
-            "type": "integer",
-            "minimum": 0
-        },
-        "nonNegativeIntegerDefault0": {
-            "allOf": [
-                { "$ref": "#/definitions/nonNegativeInteger" },
-                { "default": 0 }
-            ]
-        },
-        "simpleTypes": {
-            "enum": [
-                "array",
-                "boolean",
-                "integer",
-                "null",
-                "number",
-                "object",
-                "string"
-            ]
-        },
-        "stringArray": {
-            "type": "array",
-            "items": { "type": "string" },
-            "uniqueItems": true,
-            "default": []
-        }
-    },
-    "type": ["object", "boolean"],
-    "properties": {
-        "$id": {
-            "type": "string",
-            "format": "uri-reference"
-        },
-        "$schema": {
-            "type": "string",
-            "format": "uri"
-        },
-        "$ref": {
-            "type": "string",
-            "format": "uri-reference"
-        },
-        "$comment": {
-            "type": "string"
-        },
-        "title": {
-            "type": "string"
-        },
-        "description": {
-            "type": "string"
-        },
-        "default": true,
-        "readOnly": {
-            "type": "boolean",
-            "default": false
-        },
-        "writeOnly": {
-            "type": "boolean",
-            "default": false
-        },
-        "examples": {
-            "type": "array",
-            "items": true
-        },
-        "multipleOf": {
-            "type": "number",
-            "exclusiveMinimum": 0
-        },
-        "maximum": {
-            "type": "number"
-        },
-        "exclusiveMaximum": {
-            "type": "number"
-        },
-        "minimum": {
-            "type": "number"
-        },
-        "exclusiveMinimum": {
-            "type": "number"
-        },
-        "maxLength": { "$ref": "#/definitions/nonNegativeInteger" },
-        "minLength": { "$ref": "#/definitions/nonNegativeIntegerDefault0" },
-        "pattern": {
-            "type": "string",
-            "format": "regex"
-        },
-        "additionalItems": { "$ref": "#" },
-        "items": {
-            "anyOf": [
-                { "$ref": "#" },
-                { "$ref": "#/definitions/schemaArray" }
-            ],
-            "default": true
-        },
-        "maxItems": { "$ref": "#/definitions/nonNegativeInteger" },
-        "minItems": { "$ref": "#/definitions/nonNegativeIntegerDefault0" },
-        "uniqueItems": {
-            "type": "boolean",
-            "default": false
-        },
-        "contains": { "$ref": "#" },
-        "maxProperties": { "$ref": "#/definitions/nonNegativeInteger" },
-        "minProperties": { "$ref": "#/definitions/nonNegativeIntegerDefault0" },
-        "required": { "$ref": "#/definitions/stringArray" },
-        "additionalProperties": { "$ref": "#" },
-        "definitions": {
-            "type": "object",
-            "additionalProperties": { "$ref": "#" },
-            "default": {}
-        },
-        "properties": {
-            "type": "object",
-            "additionalProperties": { "$ref": "#" },
-            "default": {}
-        },
-        "patternProperties": {
-            "type": "object",
-            "additionalProperties": { "$ref": "#" },
-            "propertyNames": { "format": "regex" },
-            "default": {}
-        },
-        "dependencies": {
-            "type": "object",
-            "additionalProperties": {
-                "anyOf": [
-                    { "$ref": "#" },
-                    { "$ref": "#/definitions/stringArray" }
-                ]
-            }
-        },
-        "propertyNames": { "$ref": "#" },
-        "const": true,
-        "enum": {
-            "type": "array",
-            "items": true,
-            "minItems": 1,
-            "uniqueItems": true
-        },
-        "type": {
-            "anyOf": [
-                { "$ref": "#/definitions/simpleTypes" },
-                {
-                    "type": "array",
-                    "items": { "$ref": "#/definitions/simpleTypes" },
-                    "minItems": 1,
-                    "uniqueItems": true
-                }
-            ]
-        },
-        "format": { "type": "string" },
-        "contentMediaType": { "type": "string" },
-        "contentEncoding": { "type": "string" },
-        "if": { "$ref": "#" },
-        "then": { "$ref": "#" },
-        "else": { "$ref": "#" },
-        "allOf": { "$ref": "#/definitions/schemaArray" },
-        "anyOf": { "$ref": "#/definitions/schemaArray" },
-        "oneOf": { "$ref": "#/definitions/schemaArray" },
-        "not": { "$ref": "#" }
-    },
-    "default": true
-}
-`
-
-// global
-var metaSchemaLoader = gojsonschema.NewStringLoader(jsonSchemaDraft202012)
-
 func init() {
     pflag.StringVar(&hostname, "hostname", "localhost", "Hostname to bind the server (default: localhost)")
     pflag.IntVar(&port, "port", 8080, "Port to bind the server (default: 8080)")
     pflag.StringVar(&schemasDir, "schemas-dir", "./schemas", "Directory to load JSON schemas from (default: ./schemas)")
-    pflag.BoolVar(&allowUploads, "allow-uploads", false, "Allow schema uploads (default: false)")
+    pflag.BoolVar(&allowSaveUploads, "allow-save-uploads", false, "Allow schema uploads to save to disk (default: false)")
     pflag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (default: false)")
     pflag.BoolVar(&showVersion, "version", false, "Show version number and exit")
+    pflag.StringVar(&defaultSpec, "default-spec", "draft7", "Default JSON Schema spec version (default: draft7)")
+    pflag.IntVar(&maxUploadSizeMB, "max-upload-size", 2, "Maximum upload size in megabytes (valid range: 1-100)")
+    pflag.StringVar(&defaultOutputLevel, "default-outputlevel", "basic", "Default output level (valid values: basic, flag, detailed, verbose)")
     pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
     pflag.Usage = printHelp
-
-    // Validate the meta schema
-    _, err := gojsonschema.NewSchema(metaSchemaLoader)
-    if err != nil {
-        log.Fatalf("Error loading meta-schema: %v", err)
-    }
 }
 
 func sanitizeFilename(filename string) string {
@@ -258,26 +93,41 @@ func safePath(base, name string) (string, error) {
     return fullPath, nil
 }
 
-func loadSchema(path string) (*gojsonschema.Schema, error) {
+func getSpec(r *http.Request) (*jsonschema.Draft, error) {
+    specParam := r.URL.Query().Get("spec")
+    if specParam == "" {
+        specParam = defaultSpec
+    }
+    spec, ok := validSpecs[specParam]
+    if !ok {
+        return nil, fmt.Errorf("invalid spec: %s", specParam)
+    }
+    return spec, nil
+}
+
+func loadSchema(path string) (*jsonschema.Schema, error) {
     if filepath.Ext(path) != ".json" {
         return nil, fmt.Errorf("file extension must be .json: %s", path)
     }
-    log.Printf("Validating schema file://%s against meta schema", path)
-    schemaLoader := gojsonschema.NewReferenceLoader(fmt.Sprintf("file://%s", path))
-    result, err := gojsonschema.Validate(metaSchemaLoader, schemaLoader)
+    log.Printf("Validating schema %s against meta schema", path)
+    schemaContent, err := ioutil.ReadFile(path)
     if err != nil {
-        panic(err.Error())
+        return nil, fmt.Errorf("failed to read schema file: %w", err)
     }
-    if !result.Valid() {
-        errors := []string{}
-        for _, err := range result.Errors() {
-            errors = append(errors, err.String())
-        }
-        log.Printf("invalid schema: %s", errors)
-        return nil, fmt.Errorf("invalid schema: %s", errors)
+
+    compiler := jsonschema.NewCompiler()
+    compiler.Draft = validSpecs[defaultSpec]
+    compiler.ExtractAnnotations = true
+    if err := compiler.AddResource(path, strings.NewReader(string(schemaContent))); err != nil {
+        return nil, err
     }
-    log.Printf("Validated OK schema file://%s against meta schema", path)
-    schema, err := gojsonschema.NewSchema(schemaLoader)
+    log.Printf("Path %s", path)
+    schema, err := compiler.Compile(path)
+    if err != nil {
+        log.Printf("invalid schema: %s", err)
+        return nil, fmt.Errorf("invalid schema: %s", err)
+    }
+    log.Printf("Validated OK schema %s against meta schema", path)
     return schema, nil
 }
 
@@ -361,6 +211,13 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    spec, err := getSpec(r)
+    if err != nil {
+        http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
+        logRequest(r, "Invalid spec")
+        return
+    }
+
     body, err := ioutil.ReadAll(r.Body)
     if err != nil {
         http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)
@@ -375,29 +232,105 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    documentLoader := gojsonschema.NewGoLoader(jsonData)
-    result, err := schema.Validate(documentLoader)
+    compiler := jsonschema.NewCompiler()
+    compiler.Draft = spec
+    compiler.ExtractAnnotations = true
+    schema, err = compiler.Compile(filepath.Join(schemasDir, schemaFile))
     if err != nil {
-        http.Error(w, `{"error":"Error during validation"}`, http.StatusInternalServerError)
-        logRequest(r, "Error during validation")
+        http.Error(w, `{"error":"Error compiling schema"}`, http.StatusInternalServerError)
+        logRequest(r, "Error compiling schema")
         return
     }
 
-    updateStats(r.URL.Path, result.Valid())
-
-    if result.Valid() {
-        w.WriteHeader(http.StatusOK)
-        json.NewEncoder(w).Encode(map[string]string{"result": "Validation passed"})
-        logRequest(r, "Validation passed")
-    } else {
-        w.WriteHeader(http.StatusBadRequest)
-        errors := []string{}
-        for _, err := range result.Errors() {
-            errors = append(errors, err.String())
+    err = schema.Validate(jsonData)
+    if err != nil {
+        updateStats(r.URL.Path, false)
+        validationErrors := err.(*jsonschema.ValidationError).BasicOutput().Errors
+        var errors []string
+        for _, ve := range validationErrors {
+            errors = append(errors, fmt.Sprintf("%v", ve))
         }
+        w.WriteHeader(http.StatusBadRequest)
         json.NewEncoder(w).Encode(map[string]interface{}{"result": "Validation failed", "errors": errors})
         logRequest(r, "Validation failed")
+        return
     }
+
+    updateStats(r.URL.Path, true)
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{"result": "Validation passed"})
+    logRequest(r, "Validation passed")
+}
+
+func validateWithSchemaHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    spec, err := getSpec(r)
+    if err != nil {
+        http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
+        logRequest(r, "Invalid spec")
+        return
+    }
+
+    body, err := ioutil.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)
+        logRequest(r, "Invalid request body")
+        return
+    }
+
+    var requestData struct {
+        Data   interface{}          `json:"data"`
+        Schema map[string]interface{} `json:"schema"`
+    }
+
+    if err := json.Unmarshal(body, &requestData); err != nil {
+        http.Error(w, `{"error":"Invalid JSON"}`, http.StatusBadRequest)
+        logRequest(r, "Invalid JSON")
+        return
+    }
+
+    schemaBytes, err := json.Marshal(requestData.Schema)
+    if err != nil {
+        http.Error(w, `{"error":"Invalid schema"}`, http.StatusBadRequest)
+        logRequest(r, "Invalid schema")
+        return
+    }
+
+    compiler := jsonschema.NewCompiler()
+    compiler.Draft = spec
+    compiler.ExtractAnnotations = true
+    if err := compiler.AddResource("inline", strings.NewReader(string(schemaBytes))); err != nil {
+        http.Error(w, `{"error":"Error during schema validation"}`, http.StatusInternalServerError)
+        logRequest(r, "Error during schema validation")
+        return
+    }
+    schema, err := compiler.Compile("inline")
+    if err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"result": "Schema validation failed", "errors": err.Error()})
+        logRequest(r, "Schema validation failed")
+        return
+    }
+
+    err = schema.Validate(requestData.Data)
+    if err != nil {
+        updateStats(r.URL.Path, false)
+        validationErrors := err.(*jsonschema.ValidationError).BasicOutput().Errors
+        var errors []string
+        for _, ve := range validationErrors {
+            errors = append(errors, fmt.Sprintf("%v", ve))
+        }
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"result": "Validation failed", "errors": errors})
+        logRequest(r, "Validation failed")
+        return
+    }
+
+    updateStats(r.URL.Path, true)
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{"result": "Validation passed"})
+    logRequest(r, "Validation passed")
 }
 
 func updateStats(path string, passed bool) {
@@ -464,7 +397,7 @@ func schemaHandler(w http.ResponseWriter, r *http.Request) {
 
 func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
-    if !allowUploads {
+    if !allowSaveUploads {
         http.Error(w, `{"error":"Schema uploads are disabled"}`, http.StatusForbidden)
         logRequest(r, "Schema uploads are disabled")
         return
@@ -503,27 +436,44 @@ func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Validate the schema against the meta-schema
-    schemaLoader := gojsonschema.NewBytesLoader(body)
-    result, err := gojsonschema.Validate(metaSchemaLoader, schemaLoader)
+    spec, err := getSpec(r)
     if err != nil {
+        http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
+        logRequest(r, "Invalid spec")
+        return
+    }
+
+    schemaBytes, err := json.Marshal(schemaData)
+    if err != nil {
+        http.Error(w, `{"error":"Invalid schema"}`, http.StatusBadRequest)
+        logRequest(r, "Invalid schema")
+        return
+    }
+
+    compiler := jsonschema.NewCompiler()
+    compiler.Draft = spec
+    compiler.ExtractAnnotations = true
+    if err := compiler.AddResource("uploaded", strings.NewReader(string(schemaBytes))); err != nil {
         http.Error(w, `{"error":"Error during schema validation"}`, http.StatusInternalServerError)
         logRequest(r, "Error during schema validation")
         return
     }
-    if !result.Valid() {
-        errors := []string{}
-        for _, err := range result.Errors() {
-            errors = append(errors, err.String())
-        }
+    schema, err := compiler.Compile("uploaded")
+    if err != nil {
         w.WriteHeader(http.StatusBadRequest)
-        json.NewEncoder(w).Encode(map[string]interface{}{"result": "Validation failed", "errors": errors})
+        json.NewEncoder(w).Encode(map[string]interface{}{"result": "Validation failed", "errors": err.Error()})
         logRequest(r, "Validation failed")
         return
     }
 
     // Save the schema to disk
-    err = ioutil.WriteFile(schemaPath, body, 0644)
+    prettySchema, err := json.MarshalIndent(schemaData, "", "  ")
+    if err != nil {
+        http.Error(w, `{"error":"Failed to pretty print schema"}`, http.StatusInternalServerError)
+        logRequest(r, "Failed to pretty print schema")
+        return
+    }
+    err = ioutil.WriteFile(schemaPath, append(prettySchema, '\n'), 0644)
     if err != nil {
         http.Error(w, `{"error":"Failed to save schema"}`, http.StatusInternalServerError)
         logRequest(r, "Failed to save schema")
@@ -532,14 +482,8 @@ func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
 
     // Update the cache
     cacheMutex.Lock()
-    cache[schemaFile], err = loadSchema(schemaPath)
+    cache[schemaFile] = schema
     cacheMutex.Unlock()
-
-    if err != nil {
-        http.Error(w, `{"error":"Failed to load schema into cache"}`, http.StatusInternalServerError)
-        logRequest(r, "Failed to load schema into cache")
-        return
-    }
 
     w.WriteHeader(http.StatusOK)
     json.NewEncoder(w).Encode(map[string]string{"result": "Schema uploaded and validated successfully"})
@@ -617,6 +561,22 @@ func main() {
         return
     }
 
+    // Validate default spec
+    if _, ok := validSpecs[defaultSpec]; !ok {
+        log.Fatalf("Invalid default spec: %s", defaultSpec)
+    }
+
+    // Validate max upload size
+    if maxUploadSizeMB < 1 || maxUploadSizeMB > 100 {
+        log.Fatalf("Invalid max upload size: %d MB (valid range: 1-100)", maxUploadSizeMB)
+    }
+    maxUploadSize = int64(maxUploadSizeMB) * 1024 * 1024
+
+    // Validate default output level
+    if _, ok := validOutputLevels[defaultOutputLevel]; !ok {
+        log.Fatalf("Invalid default output level: %s", defaultOutputLevel)
+    }
+
     // Log all option values and report the full path of directories
     log.Printf("Server starting with the following options:")
     log.Printf("Version: %s", version)
@@ -627,15 +587,18 @@ func main() {
         log.Fatalf("Failed to get absolute path of schemas directory: %v", err)
     }
     log.Printf("Schemas Directory: %s", absSchemasDir)
-    log.Printf("Allow Uploads: %t", allowUploads)
+    log.Printf("Allow Uploads: %t", allowSaveUploads)
     log.Printf("Verbose Logging: %t", verbose)
+    log.Printf("Default Spec: %s", defaultSpec)
+    log.Printf("Max Upload Size: %d MB", maxUploadSizeMB)
+    log.Printf("Default Output Level: %s", defaultOutputLevel)
 
     // Check if the schemas directory exists
     if _, err := os.Stat(schemasDir); os.IsNotExist(err) {
         log.Fatalf("Schemas directory does not exist: %v", schemasDir)
     }
 
-    if allowUploads {
+    if allowSaveUploads {
         if err := checkSchemasDirWritable(); err != nil {
             log.Fatalf("Schemas directory is not writable: %v", err)
         }
@@ -653,6 +616,7 @@ func main() {
 
     r := mux.NewRouter()
     r.HandleFunc("/validate/{schema}", validateHandler).Methods("POST")
+    r.HandleFunc("/validatewithschema", validateWithSchemaHandler).Methods("POST")
     r.HandleFunc("/stats", statsHandler).Methods("GET")
     r.HandleFunc("/schema/{schema}", schemaHandler).Methods("GET")
     r.HandleFunc("/schema/{schema}", uploadSchemaHandler).Methods("POST")
@@ -668,12 +632,13 @@ func printHelp() {
     fmt.Println("It works by loading JSON schemas from a specified directory, and then listening for incoming HTTP requests to validate JSON data against these schemas.")
     fmt.Println("The server supports the following operations:")
     fmt.Println("1. Validating JSON data against a schema.")
-    fmt.Println("2. Retrieving validation statistics.")
-    fmt.Println("3. Retrieving a schema.")
-    fmt.Println("4. Uploading a new schema (if allowed).")
-    fmt.Println("5. Listing all schemas in the directory.")
-    fmt.Println("By default, schema uploads are disabled. You can enable schema uploads using the --allow-uploads flag.")
-    fmt.Println("Uploads are limited to 2MB in size to prevent excessively large schemas from being uploaded.")
+    fmt.Println("2. Validating JSON data against an inline schema.")
+    fmt.Println("3. Retrieving validation statistics.")
+    fmt.Println("4. Retrieving a schema.")
+    fmt.Println("5. Uploading a new schema (if allowed).")
+    fmt.Println("6. Listing all schemas in the directory.")
+    fmt.Println("By default, schema uploads are disabled. You can enable schema uploads using the --allow-save-uploads flag.")
+    fmt.Println("Uploads are limited in size to prevent excessively large schemas from being uploaded.")
     fmt.Println("For the validate and get schema operations, the schema file must have a .json extension and be located in the specified schemas directory.")
     fmt.Println("Verbose logging can be enabled using the --verbose flag to log all inbound requests with date, method, path, and outcome.")
 
@@ -688,21 +653,39 @@ Examples:
   Start the server with a custom port and schemas directory:
     go run youvalidateme.go --port 9090 --schemas-dir=/path/to/schemas
 
+  Start the server with a custom default spec:
+    go run youvalidateme.go --default-spec=draft2020
+
+  Start the server with a custom max upload size:
+    go run youvalidateme.go --max-upload-size=10
+
+  Start the server with a custom default output level:
+    go run youvalidateme.go --default-outputlevel=verbose
+
   Display the version number:
     go run youvalidateme.go --version
 
 Endpoints:
   POST /validate/{schema} - Validate JSON data against the specified schema.
-    Example: curl -X POST -d '{"your":"data"}' http://localhost:8080/validate/your_schema
+    Example: curl -X POST -d '{"your":"data"}' http://localhost:8080/validate/your_custom_schema_filename.json
+    Example with spec query parameter: curl -X POST -d '{"your":"data"}' "http://localhost:8080/validate/your_custom_schema_filename.json?spec=draft7"
+    Example with outputlevel query parameter: curl -X POST -d '{"your":"data"}' "http://localhost:8080/validate/your_custom_schema_filename.json?outputlevel=verbose"
+
+  POST /validatewithschema - Validate JSON data against an inline schema.
+    Example: curl -X POST -d '{"data":{"your":"data"},"schema":{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","properties":{"your":{"type":"string"}}}}' http://localhost:8080/validatewithschema
+    Example with spec query parameter: curl -X POST -d '{"data":{"your":"data"},"schema":{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","properties":{"your":{"type":"string"}}}}' "http://localhost:8080/validatewithschema?spec=draft2019"
+    Example with outputlevel query parameter: curl -X POST -d '{"data":{"your":"data"},"schema":{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","properties":{"your":{"type":"string"}}}}' "http://localhost:8080/validatewithschema?outputlevel=detailed"
 
   GET /stats - Retrieve statistics on inbound paths and JSON schema validation passes/fails.
     Example: curl http://localhost:8080/stats
 
   GET /schema/{schema} - Retrieve the specified schema.
-    Example: curl http://localhost:8080/schema/your_schema
+    Example: curl http://localhost:8080/schema/your_custom_schema_filename.json
 
-  POST /schema/{schema} - Upload a new JSON schema (only if --allow-uploads is true).
-    Example: curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' http://localhost:8080/schema/your_schema
+  POST /schema/{schema} - Upload a new JSON schema (only if --allow-save-uploads is true).
+    Example: curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' http://localhost:8080/schema/your_custom_schema_filename.json
+    Example with spec query parameter: curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' "http://localhost:8080/schema/your_custom_schema_filename.json?spec=draft6"
+    Example with outputlevel query parameter: curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' "http://localhost:8080/schema/your_custom_schema_filename.json?outputlevel=flag"
 
   GET /schemas - List all JSON schemas in the schemas directory.
     Example: curl http://localhost:8080/schemas
