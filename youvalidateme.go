@@ -19,7 +19,10 @@ import (
     "github.com/xeipuuv/gojsonschema"
 )
 
-const maxUploadSize = 2 * 1024 * 1024 // 2MB
+const (
+    maxUploadSize = 2 * 1024 * 1024 // 2MB
+    version       = "3"
+)
 
 var (
     hostname       string
@@ -31,6 +34,7 @@ var (
     cacheMutex     sync.RWMutex
     stats          = make(map[string]*PathStats)
     statsMutex     sync.Mutex
+    showVersion    bool
 )
 
 type PathStats struct {
@@ -174,6 +178,7 @@ func init() {
     pflag.StringVar(&schemasDir, "schemas-dir", "./schemas", "Directory to load JSON schemas from (default: ./schemas)")
     pflag.BoolVar(&allowUploads, "allow-uploads", false, "Allow schema uploads (default: false)")
     pflag.BoolVar(&verbose, "verbose", false, "Enable verbose logging (default: false)")
+    pflag.BoolVar(&showVersion, "version", false, "Show version number and exit")
     pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
     pflag.Usage = printHelp
 }
@@ -382,7 +387,7 @@ func schemaHandler(w http.ResponseWriter, r *http.Request) {
 
 func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
-    if !allowUploads {
+    if (!allowUploads) {
         http.Error(w, `{"error":"Schema uploads are disabled"}`, http.StatusForbidden)
         logRequest(r, "Schema uploads are disabled")
         return
@@ -519,6 +524,11 @@ func checkSchemasDirWritable() error {
 func main() {
     pflag.Parse()
 
+    if showVersion {
+        fmt.Printf("Version: %s\n", version)
+        return
+    }
+
     // Check if the 'help' flag is present and its value is true
     helpFlag := pflag.Lookup("help")
     if helpFlag != nil && helpFlag.Value.String() == "true" {
@@ -528,6 +538,7 @@ func main() {
 
     // Log all option values and report the full path of directories
     log.Printf("Server starting with the following options:")
+    log.Printf("Version: %s", version)
     log.Printf("Hostname: %s", hostname)
     log.Printf("Port: %d", port)
     absSchemasDir, err := filepath.Abs(schemasDir)
@@ -595,6 +606,9 @@ Examples:
 
   Start the server with a custom port and schemas directory:
     go run youvalidateme.go --port 9090 --schemas-dir=/path/to/schemas
+
+  Display the version number:
+    go run youvalidateme.go --version
 
 Endpoints:
   POST /validate/{schema} - Validate JSON data against the specified schema.
