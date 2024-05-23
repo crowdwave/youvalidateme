@@ -47,6 +47,9 @@ func init() {
 }
 
 func loadSchema(path string) (*gojsonschema.Schema, error) {
+    if filepath.Ext(path) != ".json" {
+        return nil, fmt.Errorf("file extension must be .json: %s", path)
+    }
     schemaLoader := gojsonschema.NewReferenceLoader(fmt.Sprintf("file://%s", path))
     schema, err := gojsonschema.NewSchema(schemaLoader)
     if err != nil {
@@ -231,16 +234,12 @@ func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Validate the uploaded schema
-    schemaLoader := gojsonschema.NewGoLoader(schemaData)
-    _, err = gojsonschema.NewSchema(schemaLoader)
-    if err != nil {
-        http.Error(w, "Invalid JSON schema format", http.StatusBadRequest)
-        return
-    }
-
     vars := mux.Vars(r)
     schemaFile := vars["schema"] + ".json"
+    if filepath.Ext(schemaFile) != ".json" {
+        http.Error(w, "File extension must be .json", http.StatusBadRequest)
+        return
+    }
     schemaPath := filepath.Join(schemasDir, schemaFile)
 
     // Save the schema to disk
@@ -381,7 +380,7 @@ func printHelp() {
     fmt.Println("5. Listing all schemas in the directory.")
     fmt.Println("By default, schema uploads are disabled. You can enable schema uploads using the --allow-uploads flag.")
     fmt.Println("Uploads are limited to 100K in size to prevent excessively large schemas from being uploaded.")
-    fmt.Println("For the validate and get schema operations, a file path to a JSON file containing the JSON schema is expected.")
+    fmt.Println("For the validate and get schema operations, the schema file must have a .json extension and be located in the specified schemas directory.")
 
     fmt.Fprintf(flag.CommandLine.Output(), "\nUsage of %s:\n", filepath.Base(os.Args[0]))
     fmt.Println("Command-line options:")
@@ -396,16 +395,16 @@ Examples:
 
 Endpoints:
   POST /validate/{schema} - Validate JSON data against the specified schema.
-    Example: curl -X POST -d '{"your":"data"}' http://localhost:8080/validate/your_schema
+    Example: curl -X POST -d '{"your":"data"}' http://localhost:8080/validate/your_schema.json
 
   GET /stats - Retrieve statistics on inbound paths and JSON schema validation passes/fails.
     Example: curl http://localhost:8080/stats
 
   GET /schema/{schema} - Retrieve the specified schema.
-    Example: curl http://localhost:8080/schema/your_schema
+    Example: curl http://localhost:8080/schema/your_schema.json
 
   POST /schema/{schema} - Upload a new JSON schema (only if --allow-uploads is true).
-    Example: curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' http://localhost:8080/schema/your_schema
+    Example: curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' http://localhost:8080/schema/your_schema.json
 
   GET /schemas - List all JSON schemas in the schemas directory.
     Example: curl http://localhost:8080/schemas
