@@ -29,11 +29,9 @@ There is a Python file in the examples directory that illustrates how you would 
 - **Schema Management**: Retrieve and upload JSON schemas (if uploads are allowed).
 - **List Schemas**: List all available JSON schemas in the specified directory.
 
-## Requirements
+## To compile it yourself
 
-- Go 1.15 or later
-
-## Installation
+A binary is provided for 64 bit AMD64 linux but you can compile it yourself for other platforms.
 
 Clone the repository:
 
