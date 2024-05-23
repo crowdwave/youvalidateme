@@ -1,0 +1,13 @@
+[Unit]
+Description=YouValidateMe Service
+After=network.target
+
+[Service]
+ExecStart=/opt/youvalidateme/youvalidateme --hostname localhost --port 8080 --schemas-dir /opt/youvalidateme/schemas --verbose
+WorkingDirectory=/opt/youvalidateme
+Restart=always
+RestartSec=1
+User=ubuntu
+
+[Install]
+WantedBy=multi-user.target
