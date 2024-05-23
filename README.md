@@ -2,6 +2,8 @@
 
 YouValidateMe is a Go-based server that validates inbound JSON data against JSON schemas. It works by loading JSON schemas from a specified directory and then listening for incoming HTTP requests to validate JSON data against these schemas.
 
+Why? To centralise field validation logic for your applicatyions instead of scattering different validation logic everywhere that might get out of sync.
+
 ## Features
 
 - **Validate JSON Data**: Validate inbound JSON data against specified schemas.
