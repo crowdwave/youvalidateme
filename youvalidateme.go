@@ -10,6 +10,8 @@ import (
     "net/http"
     "os"
     "path/filepath"
+    "regexp"
+    "strings"
     "sync"
     "time"
 
@@ -44,133 +46,68 @@ type PathStats struct {
 }
 
 // Meta-schema for JSON Schema Draft-07
-var jsonSchemaDraft07 = `{
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "type": ["object", "boolean"],
-    "definitions": {
-        "schemaArray": {
-            "type": "array",
-            "minItems": 1,
-            "items": {"$ref": "#"}
-        },
-        "nonNegativeInteger": {
-            "type": "integer",
-            "minimum": 0
-        },
-        "nonNegativeIntegerDefault0": {
-            "allOf": [
-                {"$ref": "#/definitions/nonNegativeInteger"},
-                {"default": 0}
-            ]
-        },
-        "simpleTypes": {
-            "enum": ["array", "boolean", "integer", "null", "number", "object", "string"]
-        },
-        "stringArray": {
-            "type": "array",
-            "items": {"type": "string"},
-            "uniqueItems": true,
-            "default": []
-        }
+var jsonSchemaDraft202012 = `{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://json-schema.org/draft/2020-12/schema",
+    "$vocabulary": {
+        "https://json-schema.org/draft/2020-12/vocab/core": true,
+        "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+        "https://json-schema.org/draft/2020-12/vocab/unevaluated": true,
+        "https://json-schema.org/draft/2020-12/vocab/validation": true,
+        "https://json-schema.org/draft/2020-12/vocab/meta-data": true,
+        "https://json-schema.org/draft/2020-12/vocab/format-annotation": true,
+        "https://json-schema.org/draft/2020-12/vocab/content": true
     },
+    "$dynamicAnchor": "meta",
+
+    "title": "Core and Validation specifications meta-schema",
+    "allOf": [
+        {"$ref": "meta/core"},
+        {"$ref": "meta/applicator"},
+        {"$ref": "meta/unevaluated"},
+        {"$ref": "meta/validation"},
+        {"$ref": "meta/meta-data"},
+        {"$ref": "meta/format-annotation"},
+        {"$ref": "meta/content"}
+    ],
+    "type": ["object", "boolean"],
+    "$comment": "This meta-schema also defines keywords that have appeared in previous drafts in order to prevent incompatible extensions as they remain in common use.",
     "properties": {
-        "$id": {"type": "string", "format": "uri-reference"},
-        "$schema": {"type": "string", "format": "uri"},
-        "$ref": {"type": "string", "format": "uri-reference"},
-        "title": {"type": "string"},
-        "description": {"type": "string"},
-        "default": true,
-        "examples": {
-            "type": "array",
-            "items": true
-        },
-        "multipleOf": {
-            "type": "number",
-            "exclusiveMinimum": 0
-        },
-        "maximum": {"type": "number"},
-        "exclusiveMaximum": {"type": "number"},
-        "minimum": {"type": "number"},
-        "exclusiveMinimum": {"type": "number"},
-        "maxLength": {"$ref": "#/definitions/nonNegativeInteger"},
-        "minLength": {"$ref": "#/definitions/nonNegativeIntegerDefault0"},
-        "pattern": {"type": "string", "format": "regex"},
-        "additionalItems": {"$ref": "#"},
-        "items": {
-            "anyOf": [
-                {"$ref": "#"},
-                {"$ref": "#/definitions/schemaArray"}
-            ],
-            "default": true
-        },
-        "maxItems": {"$ref": "#/definitions/nonNegativeInteger"},
-        "minItems": {"$ref": "#/definitions/nonNegativeIntegerDefault0"},
-        "uniqueItems": {
-            "type": "boolean",
-            "default": false
-        },
-        "contains": {"$ref": "#"},
-        "maxProperties": {"$ref": "#/definitions/nonNegativeInteger"},
-        "minProperties": {"$ref": "#/definitions/nonNegativeIntegerDefault0"},
-        "required": {"$ref": "#/definitions/stringArray"},
-        "additionalProperties": {"$ref": "#"},
         "definitions": {
+            "$comment": "\"definitions\" has been replaced by \"$defs\".",
             "type": "object",
-            "additionalProperties": {"$ref": "#"},
-            "default": {}
-        },
-        "properties": {
-            "type": "object",
-            "additionalProperties": {"$ref": "#"},
-            "default": {}
-        },
-        "patternProperties": {
-            "type": "object",
-            "additionalProperties": {"$ref": "#"},
+            "additionalProperties": { "$dynamicRef": "#meta" },
+            "deprecated": true,
             "default": {}
         },
         "dependencies": {
+            "$comment": "\"dependencies\" has been split and replaced by \"dependentSchemas\" and \"dependentRequired\" in order to serve their differing semantics.",
             "type": "object",
             "additionalProperties": {
                 "anyOf": [
-                    {"$ref": "#"},
-                    {"$ref": "#/definitions/stringArray"}
+                    { "$dynamicRef": "#meta" },
+                    { "$ref": "meta/validation#/$defs/stringArray" }
                 ]
-            }
+            },
+            "deprecated": true,
+            "default": {}
         },
-        "propertyNames": {"$ref": "#"},
-        "const": true,
-        "enum": {
-            "type": "array",
-            "minItems": 1,
-            "uniqueItems": true
+        "$recursiveAnchor": {
+            "$comment": "\"$recursiveAnchor\" has been replaced by \"$dynamicAnchor\".",
+            "$ref": "meta/core#/$defs/anchorString",
+            "deprecated": true
         },
-        "type": {
-            "anyOf": [
-                {"$ref": "#/definitions/simpleTypes"},
-                {
-                    "type": "array",
-                    "items": {"$ref": "#/definitions/simpleTypes"},
-                    "minItems": 1,
-                    "uniqueItems": true
-                }
-            ]
-        },
-        "format": {"type": "string"},
-        "contentMediaType": {"type": "string"},
-        "contentEncoding": {"type": "string"},
-        "if": {"$ref": "#"},
-        "then": {"$ref": "#"},
-        "else": {"$ref": "#"},
-        "allOf": {"$ref": "#/definitions/schemaArray"},
-        "anyOf": {"$ref": "#/definitions/schemaArray"},
-        "oneOf": {"$ref": "#/definitions/schemaArray"},
-        "not": {"$ref": "#"}
-    },
-    "default": true
-}`
+        "$recursiveRef": {
+            "$comment": "\"$recursiveRef\" has been replaced by \"$dynamicRef\".",
+            "$ref": "meta/core#/$defs/uriReferenceString",
+            "deprecated": true
+        }
+    }
+}
+`
 
-var draft07Loader = gojsonschema.NewStringLoader(jsonSchemaDraft07)
+// global
+var metaSchemaLoader = gojsonschema.NewStringLoader(jsonSchemaDraft202012)
 
 func init() {
     pflag.StringVar(&hostname, "hostname", "localhost", "Hostname to bind the server (default: localhost)")
@@ -181,32 +118,51 @@ func init() {
     pflag.BoolVar(&showVersion, "version", false, "Show version number and exit")
     pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
     pflag.Usage = printHelp
+
+    // Validate the meta schema
+    _, err := gojsonschema.NewSchema(metaSchemaLoader)
+    if err != nil {
+        log.Fatalf("Error loading meta-schema: %v", err)
+    }
+}
+
+func sanitizeFilename(filename string) string {
+    re := regexp.MustCompile(`[^\w\-.]`)
+    return re.ReplaceAllString(filename, "")
+}
+
+func safePath(base, name string) (string, error) {
+    sanitized := sanitizeFilename(name)
+    if sanitized != name {
+        return "", fmt.Errorf("unsafe filename")
+    }
+    fullPath := filepath.Join(base, sanitized)
+    if !strings.HasPrefix(fullPath, filepath.Clean(base)+string(os.PathSeparator)) {
+        return "", fmt.Errorf("invalid file path")
+    }
+    return fullPath, nil
 }
 
 func loadSchema(path string) (*gojsonschema.Schema, error) {
     if filepath.Ext(path) != ".json" {
         return nil, fmt.Errorf("file extension must be .json: %s", path)
     }
-
+    log.Printf("Validating schema file://%s against meta schema", path)
     schemaLoader := gojsonschema.NewReferenceLoader(fmt.Sprintf("file://%s", path))
-    schema, err := gojsonschema.NewSchema(schemaLoader)
+    result, err := gojsonschema.Validate(metaSchemaLoader, schemaLoader)
     if err != nil {
-        return nil, fmt.Errorf("failed to load schema from %s: %v", path, err)
-    }
-
-    // Validate the schema against the Draft-07 meta-schema
-    result, err := schema.Validate(draft07Loader)
-    if err != nil {
-        return nil, fmt.Errorf("error during schema validation: %v", err)
+        panic(err.Error())
     }
     if !result.Valid() {
         errors := []string{}
         for _, err := range result.Errors() {
             errors = append(errors, err.String())
         }
+        log.Printf("invalid schema: %s", errors)
         return nil, fmt.Errorf("invalid schema: %s", errors)
     }
-
+    log.Printf("Validated OK schema file://%s against meta schema", path)
+    schema, err := gojsonschema.NewSchema(schemaLoader)
     return schema, nil
 }
 
@@ -275,7 +231,10 @@ func logRequest(r *http.Request, outcome string) {
 func validateHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
     vars := mux.Vars(r)
-    schemaFile := vars["schema"] + ".json"
+    schemaFile := vars["schema"]
+    if filepath.Ext(schemaFile) != ".json" {
+        schemaFile += ".json"
+    }
 
     cacheMutex.RLock()
     schema, found := cache[schemaFile]
@@ -361,7 +320,10 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 func schemaHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
     vars := mux.Vars(r)
-    schemaFile := vars["schema"] + ".json"
+    schemaFile := vars["schema"]
+    if filepath.Ext(schemaFile) != ".json" {
+        schemaFile += ".json"
+    }
 
     cacheMutex.RLock()
     _, found := cache[schemaFile]
@@ -387,7 +349,7 @@ func schemaHandler(w http.ResponseWriter, r *http.Request) {
 
 func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
-    if (!allowUploads) {
+    if !allowUploads {
         http.Error(w, `{"error":"Schema uploads are disabled"}`, http.StatusForbidden)
         logRequest(r, "Schema uploads are disabled")
         return
@@ -414,17 +376,21 @@ func uploadSchemaHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     vars := mux.Vars(r)
-    schemaFile := vars["schema"] + ".json"
+    schemaFile := vars["schema"]
     if filepath.Ext(schemaFile) != ".json" {
-        http.Error(w, `{"error":"File extension must be .json"}`, http.StatusBadRequest)
-        logRequest(r, "File extension must be .json")
+        schemaFile += ".json"
+    }
+
+    schemaPath, err := safePath(schemasDir, schemaFile)
+    if err != nil {
+        http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
+        logRequest(r, err.Error())
         return
     }
-    schemaPath := filepath.Join(schemasDir, schemaFile)
 
     // Validate the schema against the Draft-07 meta-schema
     schemaLoader := gojsonschema.NewBytesLoader(body)
-    result, err := gojsonschema.Validate(draft07Loader, schemaLoader)
+    result, err := gojsonschema.Validate(metaSchemaLoader, schemaLoader)
     if err != nil {
         http.Error(w, `{"error":"Error during schema validation"}`, http.StatusInternalServerError)
         logRequest(r, "Error during schema validation")
@@ -612,16 +578,16 @@ Examples:
 
 Endpoints:
   POST /validate/{schema} - Validate JSON data against the specified schema.
-    Example: curl -X POST -d '{"your":"data"}' http://localhost:8080/validate/your_schema.json
+    Example: curl -X POST -d '{"your":"data"}' http://localhost:8080/validate/your_schema
 
   GET /stats - Retrieve statistics on inbound paths and JSON schema validation passes/fails.
     Example: curl http://localhost:8080/stats
 
   GET /schema/{schema} - Retrieve the specified schema.
-    Example: curl http://localhost:8080/schema/your_schema.json
+    Example: curl http://localhost:8080/schema/your_schema
 
   POST /schema/{schema} - Upload a new JSON schema (only if --allow-uploads is true).
-    Example: curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' http://localhost:8080/schema/your_schema.json
+    Example: curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' http://localhost:8080/schema/your_schema
 
   GET /schemas - List all JSON schemas in the schemas directory.
     Example: curl http://localhost:8080/schemas
