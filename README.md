@@ -1,8 +1,3 @@
-# youvalidateme
-
-Sure, here is a `README.md` for your GitHub repository:
-
-```markdown
 # YouValidateMe
 
 YouValidateMe is a Go-based server that validates inbound JSON data against JSON schemas. It works by loading JSON schemas from a specified directory and then listening for incoming HTTP requests to validate JSON data against these schemas.
@@ -124,6 +119,3 @@ Contributions are welcome! Please open an issue or submit a pull request for any
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-```
-
-Feel free to customize the README further to fit any specific details or instructions unique to your project.
