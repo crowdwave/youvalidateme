@@ -19,7 +19,7 @@ import (
     "github.com/xeipuuv/gojsonschema"
 )
 
-const maxUploadSize = 100 * 1024 // 100K
+const maxUploadSize = 2 * 1024 * 1024 // 2MB
 
 var (
     hostname       string
