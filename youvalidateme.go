@@ -29,7 +29,7 @@ var (
     hostname           string
     port               int
     schemasDir         string
-    allowSaveUploads       bool
+    allowSaveUploads   bool
     verbose            bool
     defaultSpec        string
     maxUploadSizeMB    int
@@ -53,6 +53,7 @@ var (
         "detailed": "detailed",
         "verbose":  "verbose",
     }
+    workingDir string
 )
 
 // PathStats holds the request statistics for a specific path
@@ -110,6 +111,8 @@ func loadSchema(path string) (*jsonschema.Schema, error) {
         return nil, fmt.Errorf("file extension must be .json: %s", path)
     }
     log.Printf("Validating schema %s against meta schema", path)
+
+    // Read schema content using Go's file reading functions
     schemaContent, err := ioutil.ReadFile(path)
     if err != nil {
         return nil, fmt.Errorf("failed to read schema file: %w", err)
@@ -193,6 +196,18 @@ func logRequest(r *http.Request, outcome string) {
     }
 }
 
+func stripFilePathsFromErrors(validationErrors []jsonschema.BasicError) []string {
+    var errors []string
+    for _, ve := range validationErrors {
+        errorMsg := ve.KeywordLocation + " " + ve.InstanceLocation
+        if strings.HasPrefix(errorMsg, "file://"+workingDir) {
+            errorMsg = strings.Replace(errorMsg, "file://"+workingDir, "file://", 1)
+        }
+        errors = append(errors, errorMsg)
+    }
+    return errors
+}
+
 func validateHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
     vars := mux.Vars(r)
@@ -211,13 +226,6 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    spec, err := getSpec(r)
-    if err != nil {
-        http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusBadRequest)
-        logRequest(r, "Invalid spec")
-        return
-    }
-
     body, err := ioutil.ReadAll(r.Body)
     if err != nil {
         http.Error(w, `{"error":"Invalid request body"}`, http.StatusBadRequest)
@@ -232,24 +240,11 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    compiler := jsonschema.NewCompiler()
-    compiler.Draft = spec
-    compiler.ExtractAnnotations = true
-    schema, err = compiler.Compile(filepath.Join(schemasDir, schemaFile))
-    if err != nil {
-        http.Error(w, `{"error":"Error compiling schema"}`, http.StatusInternalServerError)
-        logRequest(r, "Error compiling schema")
-        return
-    }
-
     err = schema.Validate(jsonData)
     if err != nil {
         updateStats(r.URL.Path, false)
         validationErrors := err.(*jsonschema.ValidationError).BasicOutput().Errors
-        var errors []string
-        for _, ve := range validationErrors {
-            errors = append(errors, fmt.Sprintf("%v", ve))
-        }
+        errors := stripFilePathsFromErrors(validationErrors)
         w.WriteHeader(http.StatusBadRequest)
         json.NewEncoder(w).Encode(map[string]interface{}{"result": "Validation failed", "errors": errors})
         logRequest(r, "Validation failed")
@@ -280,7 +275,7 @@ func validateWithSchemaHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     var requestData struct {
-        Data   interface{}          `json:"data"`
+        Data   interface{}            `json:"data"`
         Schema map[string]interface{} `json:"schema"`
     }
 
@@ -317,10 +312,7 @@ func validateWithSchemaHandler(w http.ResponseWriter, r *http.Request) {
     if err != nil {
         updateStats(r.URL.Path, false)
         validationErrors := err.(*jsonschema.ValidationError).BasicOutput().Errors
-        var errors []string
-        for _, ve := range validationErrors {
-            errors = append(errors, fmt.Sprintf("%v", ve))
-        }
+        errors := stripFilePathsFromErrors(validationErrors)
         w.WriteHeader(http.StatusBadRequest)
         json.NewEncoder(w).Encode(map[string]interface{}{"result": "Validation failed", "errors": errors})
         logRequest(r, "Validation failed")
@@ -592,6 +584,12 @@ func main() {
     log.Printf("Default Spec: %s", defaultSpec)
     log.Printf("Max Upload Size: %d MB", maxUploadSizeMB)
     log.Printf("Default Output Level: %s", defaultOutputLevel)
+
+    // Get the current working directory
+    workingDir, err = os.Getwd()
+    if err != nil {
+        log.Fatalf("Failed to get current working directory: %v", err)
+    }
 
     // Check if the schemas directory exists
     if _, err := os.Stat(schemasDir); os.IsNotExist(err) {

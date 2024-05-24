@@ -64,6 +64,13 @@ cd youvalidateme
 Build the server:
 
 ```sh
+go get github.com/fsnotify/fsnotify
+go get github.com/gorilla/mux
+go get github.com/spf13/pflag
+go get github.com/dlclark/regexp2
+go get github.com/santhosh-tekuri/jsonschema/v5
+go get github.com/santhosh-tekuri/jsonschema/v6@v6.0.0-beta1
+
 go build -o youvalidateme youvalidateme.go
 ```
 

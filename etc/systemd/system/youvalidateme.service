@@ -3,11 +3,23 @@ Description=YouValidateMe Service
 After=network.target
 
 [Service]
-ExecStart=/opt/youvalidateme/youvalidateme --hostname localhost --port 8080 --schemas-dir /opt/youvalidateme/schemas --verbose
+Type=simple
+ExecStart=/opt/youvalidateme/youvalidateme --hostname 0.0.0.0 --port 8080 --schemas-dir /opt/youvalidateme/schemas --verbose
 WorkingDirectory=/opt/youvalidateme
 Restart=always
 RestartSec=1
 User=ubuntu
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/youvalidateme
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictRealtime=true
 
 [Install]
 WantedBy=multi-user.target
