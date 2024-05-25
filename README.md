@@ -54,9 +54,9 @@ There is a Python file in the examples directory that illustrates how you would 
 
 This server is not secure and should not be connected to the public Internet. It is intended to be used on a private network or on a local server.
 
-## Why must this be started with sudo
+## Why must youvalidateme be started with sudo?
 
-On linux (not other platforms) this server must be started with sudo or as root. This is because when the server starts it puts itself in a chroot jail which means it cannot see files outside its working directory, which is more secure than having access to the entire file system.
+On linux (not other platforms) this server must be started with sudo or as root. This is because when the server starts it puts itself in a chroot jail which means it cannot see files outside its working directory. This is why you are required to provide --user and --group on the command line so that the server can change its user and group to a non-root user after it has started.  This is a security feature to prevent the server from being able to access the entire file system.
 
 ## To compile it yourself
 
