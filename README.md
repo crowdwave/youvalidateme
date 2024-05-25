@@ -91,7 +91,7 @@ Start the server with default options:
 sudo ./youvalidateme --user ubuntu --group ubuntu
 ```
 
-## important! This program must be run as root or with sudo or it will not work.
+**important! This program must be run as root or with sudo or it will not work.**
 Start the server with custom options:
 
 ```sh
