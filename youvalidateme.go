@@ -26,7 +26,7 @@ import (
 )
 
 const (
-    version = "8"
+    version = "9"
 )
 
 var (
@@ -592,16 +592,19 @@ func jailSelf() {
     err = syscall.Chroot(".")
     if err != nil {
         log.Fatalf("Failed to chroot: %v", err)
+        os.Exit(1)
     }
 
     // Drop privileges
     err = syscall.Setgid(gid)
     if err != nil {
         log.Fatalf("Failed to set group ID: %v", err)
+        os.Exit(1)
     }
     err = syscall.Setuid(uid)
     if err != nil {
         log.Fatalf("Failed to set user ID: %v", err)
+        os.Exit(1)
     }
 
     log.Printf("Dropped privileges to user: %s and group: %s", userName, groupName)
@@ -619,7 +622,7 @@ func main() {
 
     if showVersion {
         fmt.Printf("Version: %s\n", version)
-        return
+        os.Exit(0)
     }
 
     // Check if the 'help' flag is present and its value is true
