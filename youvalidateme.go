@@ -9,10 +9,14 @@ import (
     "log"
     "net/http"
     "os"
+    "os/user"
     "path/filepath"
     "regexp"
+    "runtime"
+    "strconv"
     "strings"
     "sync"
+    "syscall"
     "time"
 
     "github.com/fsnotify/fsnotify"
@@ -22,7 +26,7 @@ import (
 )
 
 const (
-    version = "6"
+    version = "8"
 )
 
 var (
@@ -54,6 +58,8 @@ var (
         "verbose":  "verbose",
     }
     workingDir string
+    userName   string
+    groupName  string
 )
 
 // PathStats holds the request statistics for a specific path
@@ -73,6 +79,8 @@ func init() {
     pflag.StringVar(&defaultSpec, "default-spec", "draft7", "Default JSON Schema spec version (default: draft7)")
     pflag.IntVar(&maxUploadSizeMB, "max-upload-size", 2, "Maximum upload size in megabytes (valid range: 1-100)")
     pflag.StringVar(&defaultOutputLevel, "default-outputlevel", "basic", "Default output level (valid values: basic, flag, detailed, verbose)")
+    pflag.StringVar(&userName, "user", "", "User name or ID to drop privileges to after chroot (required on Linux)")
+    pflag.StringVar(&groupName, "group", "", "Group name or ID to drop privileges to after chroot (required on Linux)")
     pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
     pflag.Usage = printHelp
 }
@@ -197,6 +205,12 @@ func logRequest(r *http.Request, outcome string) {
 }
 
 func stripFilePathsFromErrors(validationErrors []jsonschema.BasicError) []string {
+    // Get the current working directory
+    workingDir, err := os.Getwd()
+    if err != nil {
+        log.Fatalf("Failed to get current working directory: %v", err)
+    }
+
     var errors []string
     for _, ve := range validationErrors {
         errorMsg := ve.KeywordLocation + " " + ve.InstanceLocation
@@ -256,7 +270,6 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(map[string]string{"result": "Validation passed"})
     logRequest(r, "Validation passed")
 }
-
 func validateWithSchemaHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 
@@ -538,8 +551,71 @@ func checkSchemasDirWritable() error {
     return os.Remove(testFile)
 }
 
+func jailSelf() {
+    // this puts the program in a chroot jail then drops privileges to specified user/group
+
+    log.Println("Running on", runtime.GOOS)
+    if runtime.GOOS != "linux" {
+        log.Println("Skipping jailSelf: not running on Linux")
+        return
+    }
+
+    // Check if the program is running as root
+    if os.Geteuid() != 0 {
+        log.Fatal("This program must be run as root!")
+    }
+
+    if userName == "" || groupName == "" {
+        log.Fatal("User and group must be provided!")
+    }
+
+    // Lookup the user and group if names were provided
+    usr, err := user.Lookup(userName)
+    if err != nil {
+        log.Fatalf("Failed to lookup user: %v", err)
+    }
+    uid, err := strconv.Atoi(usr.Uid)
+    if err != nil {
+        log.Fatalf("Failed to convert user ID: %v", err)
+    }
+
+    grp, err := user.LookupGroup(groupName)
+    if err != nil {
+        log.Fatalf("Failed to lookup group: %v", err)
+    }
+    gid, err := strconv.Atoi(grp.Gid)
+    if err != nil {
+        log.Fatalf("Failed to convert group ID: %v", err)
+    }
+
+    // Chroot to the current directory
+    err = syscall.Chroot(".")
+    if err != nil {
+        log.Fatalf("Failed to chroot: %v", err)
+    }
+
+    // Drop privileges
+    err = syscall.Setgid(gid)
+    if err != nil {
+        log.Fatalf("Failed to set group ID: %v", err)
+    }
+    err = syscall.Setuid(uid)
+    if err != nil {
+        log.Fatalf("Failed to set user ID: %v", err)
+    }
+
+    log.Printf("Dropped privileges to user: %s and group: %s", userName, groupName)
+}
+
 func main() {
     pflag.Parse()
+
+    // Ensure user and group arguments are provided
+    if userName == "" || groupName == "" {
+        log.Fatal("User and group arguments are required.")
+    }
+
+    jailSelf()
 
     if showVersion {
         fmt.Printf("Version: %s\n", version)
@@ -574,11 +650,7 @@ func main() {
     log.Printf("Version: %s", version)
     log.Printf("Hostname: %s", hostname)
     log.Printf("Port: %d", port)
-    absSchemasDir, err := filepath.Abs(schemasDir)
-    if err != nil {
-        log.Fatalf("Failed to get absolute path of schemas directory: %v", err)
-    }
-    log.Printf("Schemas Directory: %s", absSchemasDir)
+    log.Printf("Schemas Directory: %s", schemasDir)
     log.Printf("Allow Uploads: %t", allowSaveUploads)
     log.Printf("Verbose Logging: %t", verbose)
     log.Printf("Default Spec: %s", defaultSpec)
@@ -586,10 +658,11 @@ func main() {
     log.Printf("Default Output Level: %s", defaultOutputLevel)
 
     // Get the current working directory
-    workingDir, err = os.Getwd()
+    workingDir, err := os.Getwd()
     if err != nil {
         log.Fatalf("Failed to get current working directory: %v", err)
     }
+    log.Printf("Working Directory: %s", workingDir)
 
     // Check if the schemas directory exists
     if _, err := os.Stat(schemasDir); os.IsNotExist(err) {
@@ -639,6 +712,9 @@ func printHelp() {
     fmt.Println("Uploads are limited in size to prevent excessively large schemas from being uploaded.")
     fmt.Println("For the validate and get schema operations, the schema file must have a .json extension and be located in the specified schemas directory.")
     fmt.Println("Verbose logging can be enabled using the --verbose flag to log all inbound requests with date, method, path, and outcome.")
+    fmt.Println()
+    fmt.Println("This program must be run as root. It will then drop its privileges to the user and group specified on the command line using the --user and --group flags.")
+    fmt.Println()
 
     fmt.Fprintf(flag.CommandLine.Output(), "\nUsage of %s:\n", filepath.Base(os.Args[0]))
     fmt.Println("Command-line options:")
@@ -662,6 +738,9 @@ Examples:
 
   Display the version number:
     go run youvalidateme.go --version
+
+  Drop privileges to a specific user and group after chroot:
+    go run youvalidateme.go --user=nobody --group=nogroup
 
 Endpoints:
   POST /validate/{schema} - Validate JSON data against the specified schema.

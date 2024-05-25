@@ -63,6 +63,8 @@ cd youvalidateme
 
 Build the server:
 
+# important! this program must be compiled with the CGO_ENABLED=0 flag set or it will not work.
+
 ```sh
 go get github.com/fsnotify/fsnotify
 go get github.com/gorilla/mux
@@ -71,7 +73,7 @@ go get github.com/dlclark/regexp2
 go get github.com/santhosh-tekuri/jsonschema/v5
 go get github.com/santhosh-tekuri/jsonschema/v6@v6.0.0-beta1
 
-go build -o youvalidateme youvalidateme.go
+CGO_ENABLED=0 go build -o youvalidateme youvalidateme.go
 ```
 
 ## Usage
