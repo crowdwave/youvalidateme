@@ -52,7 +52,7 @@ There is a Python file in the examples directory that illustrates how you would 
 
 ## Warning - don't connect this to the public Internet!
 
-This server is not secure and should not be connected to the public Internet. It is intended to be used on a private network or on a local server.
+This server is not designed for security and should not be connected to the public Internet. It is intended to be used on a private network or on a local server.
 
 ## Why must youvalidateme be started with sudo?
 
@@ -104,68 +104,194 @@ sudo ./youvalidateme --hostname 0.0.0.0 --port 8080 --schemas-dir=/path/to/schem
 - `--port`: Port to bind the server (default: `8080`)
 - `--schemas-dir`: Directory to load JSON schemas from (default: `./schemas`)
 - `--allow-save-uploads`: Allow schema uploads (default: `false`)
+- `--user`: The user to run the server as
+- `--group`: The group to run the server as
 
 ## Endpoints
+Here's the complete documentation of the package, including the list of all endpoints at the top and detailed descriptions, including optional query parameters for each supported endpoint.
 
-### Validate JSON Data
+### List of Endpoints
 
-Validate JSON data against the specified schema.
+1. **POST /validate/{schema}** - Validate JSON data against the specified schema.
+2. **POST /validatewithschema** - Validate JSON data against an inline schema.
+3. **GET /stats** - Retrieve statistics on inbound paths and JSON schema validation passes/fails.
+4. **GET /schema/{schema}** - Retrieve the specified schema.
+5. **POST /schema/{schema}** - Upload a new JSON schema.
+6. **GET /schemas** - List all JSON schemas in the schemas directory.
 
-```sh
-curl -X POST -d '{"your":"data"}' http://localhost:8080/validate/your_schema.json
+### Endpoint Details
+
+#### 1. POST /validate/{schema}
+
+**Description:**
+Validates JSON data against the specified schema file.
+
+**Expected Data Structure:**
+The request body should contain the JSON data to be validated.
+
+**Optional Query Parameters:**
+- `spec`: Specifies the JSON Schema draft version (e.g., `draft7`). Default is `draft7`.
+- `outputlevel`: Specifies the level of detail for the validation output. Valid values are `basic`, `flag`, `detailed`, `verbose`.
+
+**Example:**
+```bash
+curl -X POST -d '{"your":"data"}' http://localhost:8080/validate/your_custom_schema_filename.json
+```
+Example with query parameters:
+```bash
+curl -X POST -d '{"your":"data"}' "http://localhost:8080/validate/your_custom_schema_filename.json?spec=draft7&outputlevel=verbose"
 ```
 
-### Retrieve Validation Statistics
+#### 2. POST /validatewithschema
 
-Retrieve statistics on inbound paths and JSON schema validation passes/fails.
+**Description:**
+Validates JSON data against an inline schema provided in the request body.
 
-```sh
+**Expected Data Structure:**
+The request body should be a JSON object with two fields:
+- `data`: The actual JSON data to be validated.
+- `schema`: The JSON schema that defines the validation rules for the data.
+
+**Optional Query Parameters:**
+- `spec`: Specifies the JSON Schema draft version (e.g., `draft7`). Default is `draft7`.
+- `outputlevel`: Specifies the level of detail for the validation output. Valid values are `basic`, `flag`, `detailed`, `verbose`.
+
+**Example:**
+```bash
+curl -X POST -H "Content-Type: application/json" -d '{
+  "data": {
+    "your": "data"
+  },
+  "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "your": {
+        "type": "string"
+      }
+    },
+    "required": ["your"]
+  }
+}' http://localhost:8080/validatewithschema
+```
+Example with query parameters:
+```bash
+curl -X POST -H "Content-Type: application/json" -d '{
+  "data": {
+    "your": "data"
+  },
+  "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+      "your": {
+        "type": "string"
+      }
+    },
+    "required": ["your"]
+  }
+}' "http://localhost:8080/validatewithschema?spec=draft2019&outputlevel=detailed"
+```
+
+#### 3. GET /stats
+
+**Description:**
+Retrieves statistics on inbound paths and JSON schema validation passes/fails.
+
+**Example:**
+```bash
 curl http://localhost:8080/stats
 ```
 
-### Retrieve a Schema
+#### 4. GET /schema/{schema}
 
-Retrieve the specified schema.
+**Description:**
+Retrieves the specified schema file.
 
-```sh
-curl http://localhost:8080/schema/your_schema.json
+**Example:**
+```bash
+curl http://localhost:8080/schema/your_custom_schema_filename.json
 ```
 
-### Upload a New Schema
+#### 5. POST /schema/{schema}
 
-Upload a new JSON schema (only if uploads are allowed).
+**Description:**
+Uploads a new JSON schema. This endpoint is enabled only if the `--allow-save-uploads` flag is set to true.
 
-```sh
-curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' http://localhost:8080/schema/your_schema.json
+**Expected Data Structure:**
+The request body should contain the JSON schema to be uploaded.
+
+**Optional Query Parameters:**
+- `spec`: Specifies the JSON Schema draft version (e.g., `draft7`). Default is `draft7`.
+- `outputlevel`: Specifies the level of detail for the validation output. Valid values are `basic`, `flag`, `detailed`, `verbose`.
+
+**Example:**
+```bash
+curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' http://localhost:8080/schema/your_custom_schema_filename.json
+```
+Example with query parameters:
+```bash
+curl -X POST -d '{"$schema":"http://json-schema.org/draft-07/schema#","title":"Example","type":"object","properties":{"example":{"type":"string"}}}' "http://localhost:8080/schema/your_custom_schema_filename.json?spec=draft6&outputlevel=flag"
 ```
 
-### List All Schemas
+#### 6. GET /schemas
 
-List all JSON schemas in the schemas directory.
+**Description:**
+Lists all JSON schemas in the schemas directory.
 
-```sh
+**Optional Query Parameters:**
+- `format`: Specifies the response format. Valid values are `json` (for JSON format) and any other value (for HTML format).
+
+**Example:**
+```bash
 curl http://localhost:8080/schemas
 ```
-
-List all JSON schemas in the schemas directory in JSON format.
-
-```sh
+Example with JSON format:
+```bash
 curl http://localhost:8080/schemas?format=json
 ```
 
-## Development
+### Example Usage
 
-### Running the Server
+1. **Start the server with default options:**
+   ```bash
+   go run youvalidateme.go
+   ```
 
-To run the server locally for development purposes, use:
+2. **Start the server with a custom port and schemas directory:**
+   ```bash
+   go run youvalidateme.go --port 9090 --schemas-dir=/path/to/schemas
+   ```
 
-```sh
-go run youvalidateme.go
-```
+3. **Start the server with a custom default spec:**
+   ```bash
+   go run youvalidateme.go --default-spec=draft2020
+   ```
 
-### Testing
+4. **Start the server with a custom max upload size:**
+   ```bash
+   go run youvalidateme.go --max-upload-size=10
+   ```
 
-To test the server, you can use the provided curl commands to interact with the various endpoints.
+5. **Start the server with a custom default output level:**
+   ```bash
+   go run youvalidateme.go --default-outputlevel=verbose
+   ```
+
+6. **Display the version number:**
+   ```bash
+   go run youvalidateme.go --version
+   ```
+
+7. **Drop privileges to a specific user and group after chroot:**
+   ```bash
+   go run youvalidateme.go --user=nobody --group=nogroup
+   ```
+
+### Examples
+
+Examine the Python programs in the examples directory to see how to use YouValidateMe from within your own application.
+
 
 ## Contributing
 
