@@ -54,6 +54,10 @@ There is a Python file in the examples directory that illustrates how you would 
 
 This server is not secure and should not be connected to the public Internet. It is intended to be used on a private network or on a local server.
 
+## Why must this be started with sudo
+
+On linux (not other platforms) this server must be started with sudo or as root. This is because when the server starts it puts itself in a chroot jail which means it cannot see files outside its working directory, which is more secure than having access to the entire file system.
+
 ## To compile it yourself
 
 A binary is provided for 64 bit AMD64 linux but you can compile it yourself for other platforms.
