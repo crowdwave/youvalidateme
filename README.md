@@ -251,43 +251,6 @@ Example with JSON format:
 curl http://localhost:8080/schemas?format=json
 ```
 
-### Example Usage
-
-1. **Start the server with default options:**
-   ```bash
-   go run youvalidateme.go
-   ```
-
-2. **Start the server with a custom port and schemas directory:**
-   ```bash
-   go run youvalidateme.go --port 9090 --schemas-dir=/path/to/schemas
-   ```
-
-3. **Start the server with a custom default spec:**
-   ```bash
-   go run youvalidateme.go --default-spec=draft2020
-   ```
-
-4. **Start the server with a custom max upload size:**
-   ```bash
-   go run youvalidateme.go --max-upload-size=10
-   ```
-
-5. **Start the server with a custom default output level:**
-   ```bash
-   go run youvalidateme.go --default-outputlevel=verbose
-   ```
-
-6. **Display the version number:**
-   ```bash
-   go run youvalidateme.go --version
-   ```
-
-7. **Drop privileges to a specific user and group after chroot:**
-   ```bash
-   go run youvalidateme.go --user=nobody --group=nogroup
-   ```
-
 ### Examples
 
 Examine the Python programs in the examples directory to see how to use YouValidateMe from within your own application.
