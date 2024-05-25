@@ -50,6 +50,10 @@ There is a Python file in the examples directory that illustrates how you would 
 - **Schema Management**: Retrieve and upload JSON schemas (if uploads are allowed).
 - **List Schemas**: List all available JSON schemas in the specified directory.
 
+## Warning - don't connect this to the public Internet!
+
+This server is not secure and should not be connected to the public Internet. It is intended to be used on a private network or on a local server.
+
 ## To compile it yourself
 
 A binary is provided for 64 bit AMD64 linux but you can compile it yourself for other platforms.
@@ -71,7 +75,6 @@ go get github.com/gorilla/mux
 go get github.com/spf13/pflag
 go get github.com/dlclark/regexp2
 go get github.com/santhosh-tekuri/jsonschema/v5
-go get github.com/santhosh-tekuri/jsonschema/v6@v6.0.0-beta1
 
 CGO_ENABLED=0 go build -o youvalidateme youvalidateme.go
 ```
@@ -81,13 +84,14 @@ CGO_ENABLED=0 go build -o youvalidateme youvalidateme.go
 Start the server with default options:
 
 ```sh
-./youvalidateme
+sudo ./youvalidateme --user ubuntu --group ubuntu
 ```
 
+## important! This program must be run as root or with sudo or it will not work.
 Start the server with custom options:
 
 ```sh
-./youvalidateme --port 8080 --schemas-dir=/path/to/schemas --allow-uploads
+sudo ./youvalidateme --hostname 0.0.0.0 --port 8080 --schemas-dir=/path/to/schemas --allow-save-uploads  --user ubuntu --group ubuntu
 ```
 
 ### Command-line Options
@@ -95,7 +99,7 @@ Start the server with custom options:
 - `--hostname`: Hostname to bind the server (default: `localhost`)
 - `--port`: Port to bind the server (default: `8080`)
 - `--schemas-dir`: Directory to load JSON schemas from (default: `./schemas`)
-- `--allow-uploads`: Allow schema uploads (default: `false`)
+- `--allow-save-uploads`: Allow schema uploads (default: `false`)
 
 ## Endpoints
 
