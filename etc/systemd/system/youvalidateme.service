@@ -4,14 +4,14 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/opt/youvalidateme/youvalidateme --hostname 0.0.0.0 --port 8080 --schemas-dir /opt/youvalidateme/schemas --verbose
+ExecStart=/opt/youvalidateme/youvalidateme --verbose --hostname 0.0.0.0 --port 8080 --allow-save-uploads  --verbose --user ubuntu --group ubuntu --schemas-dir ./schemas
 WorkingDirectory=/opt/youvalidateme
+ReadWriteDirs=/opt/youvalidateme/schemas
+RootDir=/opt/youvalidateme
 Restart=always
 RestartSec=1
-User=ubuntu
-ProtectSystem=strict
+User=root
 ProtectHome=true
-ReadWritePaths=/opt/youvalidateme
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
@@ -23,3 +23,4 @@ RestrictRealtime=true
 
 [Install]
 WantedBy=multi-user.target
+
