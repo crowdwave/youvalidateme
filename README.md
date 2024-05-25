@@ -25,13 +25,13 @@ YouValidateMe is based on https://github.com/santhosh-tekuri/jsonschema which is
 
 Ways to use YouValidateMe:
 
-1: JSON schema documents are stored as plain text JSON files on the server.
-2: You can manually copy your JSON schema documents to the server using normal operating system copy commands.
-3: You can upload your JSON schema documents to the server via POST using the provided API.
-4: You can validate by POSTing JSON data to the filename of one of your schema documents.
-5: You can pull schema documents into your code via GET and then validate JSON data using your own language/library.
-6: You can validate by submitting both data and schema to the server in a single POST.
-7: You can choose which JSON schema draft level to validate against by specifying 'spec' query parameter in the POST request.
+1. JSON schema documents are stored as plain text JSON files on the server.
+2. You can manually copy your JSON schema documents to the server using normal operating system copy commands.
+3. You can upload your JSON schema documents to the server via POST using the provided API.
+4. You can validate by POSTing JSON data to the filename of one of your schema documents.
+5. You can pull schema documents into your code via GET and then validate JSON data using your own language/library.
+6. You can validate by submitting both data and schema to the server in a single POST.
+7. You can choose which JSON schema draft level to validate against by specifying 'spec' query parameter in the POST request.
 
 ## IMPORTANT!!!
 
