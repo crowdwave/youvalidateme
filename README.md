@@ -65,7 +65,7 @@ A binary is provided for 64 bit AMD64 linux but you can compile it yourself for 
 Clone the repository:
 
 ```sh
-git clone https://github.com/yourusername/youvalidateme.git
+git clone https://github.com/crowdwave/youvalidateme.git
 cd youvalidateme
 ```
 
